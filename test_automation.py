@@ -493,24 +493,36 @@ def run_test():
 
                 if action_locator:
                     action_locator.click()
+                    
+                    # Wait for the transliterating button to appear and then disappear to avoid capturing partial streams
+                    try:
+                        page.wait_for_selector("button:has-text('Transliterating')", state="attached", timeout=1500)
+                        page.wait_for_selector("button:has-text('Transliterating')", state="hidden", timeout=max(15000, int(args.timeout_ms)))
+                    except Exception:
+                        pass
 
                 page.wait_for_timeout(max(0, int(args.wait_ms)))
                 
-                # Wait for visible content - retry a few times if empty
+                # Wait for visible content - retry a few times if empty or still changing
                 actual_output = ""
                 tries = max(1, int(args.retries))
                 for i in range(tries):
                     current = _read_output(is_chat, output_locator)
                     if not current:
-                        page.wait_for_timeout(max(0, int(args.retry_wait_ms)))
+                        page.wait_for_timeout(max(500, int(args.retry_wait_ms)))
                         continue
                     if prev_output and current == prev_output:
-                        page.wait_for_timeout(max(0, int(args.retry_wait_ms)))
+                        page.wait_for_timeout(max(500, int(args.retry_wait_ms)))
                         continue
-                    if current:
+                    
+                    # Verify output has stabilized to handle streaming text
+                    page.wait_for_timeout(600)
+                    next_current = _read_output(is_chat, output_locator)
+                    if current == next_current:
                         actual_output = current
                         break
-                    page.wait_for_timeout(max(0, int(args.retry_wait_ms)))
+                    else:
+                        page.wait_for_timeout(max(200, int(args.retry_wait_ms)))
 
                 if prev_output and actual_output == "" and prev_output != "":
                     raise RuntimeError("Output did not update for this input (still showing previous output).")
